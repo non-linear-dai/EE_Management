@@ -197,10 +197,12 @@ export default function SupplyMap({
   d,
   query,
   onEdit,
+  onLink,
 }: {
   d: Workspace;
   query: string;
   onEdit: (s: Site) => void;
+  onLink: (s: Site, stage?: string) => void;
 }) {
   const [selected, setSelected] = useState(""),
     [stage, setStage] = useState("全部制造阶段");
@@ -299,9 +301,22 @@ export default function SupplyMap({
                     : "未录入经纬度，可编辑工厂后通过城市检索或手动标点定位。"}
                 </small>
               </div>
-              <button className="btn small" onClick={() => onEdit(current)}>
-                编辑位置
-              </button>
+              <div className="button-group">
+                <button
+                  className="btn primary small"
+                  onClick={() =>
+                    onLink(
+                      current,
+                      stage === "全部制造阶段" ? undefined : stage,
+                    )
+                  }
+                >
+                  关联 MPN
+                </button>
+                <button className="btn small" onClick={() => onEdit(current)}>
+                  编辑位置
+                </button>
+              </div>
             </div>
           )}
         </div>

@@ -45,6 +45,7 @@ import MrpPlanner from "./mrp-planner";
 import SupplyMap from "./supply-map";
 import LocationFields from "./location-fields";
 import NumberingSettings from "./numbering-settings";
+import MpnSiteDialog from "./mpn-site-dialog";
 import { rulesFor, nextPartNumber } from "@/lib/ee/numbering";
 import type { LucideIcon } from "lucide-react";
 import { DEMO } from "@/lib/ee/demo";
@@ -1821,6 +1822,9 @@ export default function Platform({ user }: { user: string }) {
             d={d}
             query={query}
             onEdit={(s) => edit("site", "编辑制造工厂与定位", s)}
+            onLink={(s, stage) =>
+              create("mpnSite", "为工厂关联多个 MPN", { siteId: s.id, stage })
+            }
           />
         )}
         {supplyMode === "list" && (
@@ -1856,9 +1860,20 @@ export default function Platform({ user }: { user: string }) {
                       }{" "}
                       个关联 MPN
                     </span>
-                    <button onClick={() => edit("site", "编辑制造工厂", s)}>
-                      编辑 <ArrowUpRight size={14} />
-                    </button>
+                    <div className="button-group">
+                      <button
+                        onClick={() =>
+                          create("mpnSite", "为工厂关联多个 MPN", {
+                            siteId: s.id,
+                          })
+                        }
+                      >
+                        关联 MPN <Link2 size={12} />
+                      </button>
+                      <button onClick={() => edit("site", "编辑制造工厂", s)}>
+                        编辑 <ArrowUpRight size={14} />
+                      </button>
+                    </div>
                   </div>
                 </article>
               ))}
@@ -2280,7 +2295,25 @@ export default function Platform({ user }: { user: string }) {
           </button>
         </div>
       )}
-      {modal && (
+      {modal?.kind === "mpnSite" ? (
+        <MpnSiteDialog
+          key={
+            String(modal.initial?.siteId || "") +
+            String(modal.initial?.mpnId || "")
+          }
+          d={d}
+          initial={modal.initial}
+          demo={demo}
+          onClose={() => setModal(null)}
+          onSaved={(data, summary) => {
+            accept(data);
+            setModal(null);
+            setToast(
+              `已关联 ${summary.added} 个 MPN${summary.skipped ? `，${summary.skipped} 个已有关系已跳过` : ""}`,
+            );
+          }}
+        />
+      ) : modal ? (
         <RecordModal
           key={modal.kind + (modal.id || "new")}
           modal={modal}
@@ -2290,7 +2323,7 @@ export default function Platform({ user }: { user: string }) {
           onSave={save}
           onRemove={confirmRemove}
         />
-      )}{" "}
+      ) : null}{" "}
       {help && (
         <div className="modal-overlay" onClick={() => setHelp(false)}>
           <section
@@ -2551,52 +2584,10 @@ function RecordModal({
       { key: "name", label: "工厂 / 厂区名称", wide: true },
       { key: "operator", label: "运营法人 / 制造商", wide: true },
     ],
-    mpnSite: [
-      {
-        key: "mpnId",
-        label: "制造商器件 MPN",
-        wide: true,
-        options: d.mpns.map((m) => ({
-          value: m.id,
-          label: m.mpn + " · " + m.manufacturer,
-        })),
-      },
-      {
-        key: "siteId",
-        label: "制造工厂",
-        wide: true,
-        options: d.sites.map((s) => ({
-          value: s.id,
-          label: s.name + " · " + s.country + " / " + s.city,
-        })),
-      },
-      {
-        key: "stage",
-        label: "制造阶段",
-        options: opts([
-          "晶圆制造",
-          "封装",
-          "测试",
-          "封装测试",
-          "PCB 制造",
-          "无源器件制造",
-          "器件制造",
-        ]),
-      },
-      { key: "verifiedAt", label: "核验日期", type: "date", optional: true },
-      {
-        key: "source",
-        label: "信息来源 / 证据",
-        type: "textarea",
-        wide: true,
-        hint: "填写原厂声明、PCN 编号、文件名称或可靠来源链接",
-      },
-    ],
   };
   const fields = base[modal.kind] || [];
   const blocked =
-    demo &&
-    ["mpn", "mpnSite", "productAssembly", "bomLine"].includes(modal.kind);
+    demo && ["mpn", "productAssembly", "bomLine"].includes(modal.kind);
   function value(field: Field) {
     const v = modal.initial?.[field.key] ?? field.value ?? "";
     if (field.key === "parameters" && v) {

@@ -4633,3 +4633,269 @@ tbody tr:last-child td {
   font-weight: 600;
   font-size: 11px;
 }
+/* One factory can be linked to many manufacturer parts in a single action. */
+.mpn-link-modal {
+  width: 720px;
+}
+.mpn-link-modal .modal-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.mpn-selection-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 24px 0 12px;
+  font-size: 10px;
+  color: #8b9e80;
+}
+.mpn-selection-heading > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #607e52;
+  font-size: 11px;
+}
+.mpn-selection-heading b {
+  font-size: 8px;
+  color: #7d9e69;
+  background: #eff6e8;
+  border: 1px solid #dfead4;
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-weight: 400;
+  margin-left: 4px;
+}
+.mpn-selection-heading strong {
+  font-family: "IBM Plex Mono", monospace;
+  color: #4c7e3d;
+  font-weight: 500;
+}
+.mpn-selection-tools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 11px;
+}
+.mpn-selection-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #dfe8d7;
+  border-radius: 5px;
+  background: #fcfdf9;
+  padding: 9px 11px;
+  color: #8aa17c;
+}
+.mpn-selection-search input {
+  width: 100%;
+  border: 0;
+  background: none;
+  outline: none;
+  font-size: 11px;
+  color: #638052;
+  min-width: 0;
+}
+.mpn-selection-search input::placeholder {
+  color: #b0bda4;
+  font-size: 10px;
+}
+.mpn-selection-tools .text-btn {
+  white-space: nowrap;
+  font-size: 10px;
+}
+.mpn-checkbox-list {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #e1e9d9;
+  border-radius: 7px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: #fdfefa;
+}
+.mpn-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
+  border-bottom: 1px solid #eaf0e2;
+  cursor: pointer;
+}
+.mpn-checkbox-row:last-child {
+  border-bottom: 0;
+}
+.mpn-checkbox-row:hover {
+  background: #f3f8ec;
+}
+.mpn-checkbox-row.chosen {
+  background: #edf5e6;
+}
+.mpn-checkbox-row.already-linked {
+  background: #f7f9f3;
+  cursor: default;
+}
+.mpn-checkbox-row input {
+  height: 15px;
+  width: 15px;
+  accent-color: #407d4f;
+  flex-shrink: 0;
+}
+.mpn-checkbox-row > div {
+  flex: 1;
+  min-width: 0;
+}
+.mpn-checkbox-row strong {
+  display: block;
+  font-size: 12px;
+  color: #4c7041;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.mpn-checkbox-row div > span {
+  display: block;
+  color: #8ba17b;
+  font-size: 10px;
+  margin-top: 5px;
+}
+.mpn-checkbox-row small {
+  display: block;
+  color: #a3b292;
+  font-size: 9px;
+  margin-top: 6px;
+  line-height: 1.8;
+}
+.mpn-checkbox-row.already-linked strong {
+  color: #8b9c80;
+}
+.linked-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: #eaf2e2;
+  color: #849f73;
+  border-radius: 4px;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.mpn-approval {
+  font-size: 9px;
+  color: #b19a66;
+  white-space: nowrap;
+}
+.mpn-approval.approved {
+  color: #749962;
+}
+.mpn-selection-hint {
+  font-size: 9px;
+  color: #a0af92;
+  line-height: 1.9;
+  margin: 11px 0;
+}
+.mpn-source-field {
+  display: block;
+  margin-top: 20px;
+}
+.mpn-source-field > span {
+  display: block;
+  font-size: 11px;
+  color: #829778;
+  margin-bottom: 8px;
+}
+.mpn-source-field textarea {
+  border: 1px solid #dfe7d8;
+  background: #fcfdfb;
+  border-radius: 5px;
+  width: 100%;
+  padding: 10px 11px;
+  font-size: 12px;
+  color: #627956;
+  resize: vertical;
+  line-height: 1.8;
+}
+.mpn-source-field textarea::placeholder {
+  font-size: 10px;
+  color: #b4c0a9;
+}
+.mpn-checkbox-list .sr-only {
+  position: absolute;
+  clip: rect(0, 0, 0, 0);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+  margin: -1px;
+  white-space: nowrap;
+}
+.site-bottom {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.site-bottom .button-group {
+  gap: 10px;
+}
+.map-selected > .button-group {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+@media (max-width: 650px) {
+  .mpn-selection-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 21px;
+  }
+  .mpn-selection-tools {
+    gap: 11px;
+    flex-wrap: wrap;
+  }
+  .mpn-selection-search {
+    flex-basis: 100%;
+  }
+  .mpn-selection-tools .text-btn {
+    font-size: 9px;
+  }
+  .mpn-checkbox-list {
+    max-height: 260px;
+  }
+  .mpn-checkbox-row {
+    padding: 12px 10px;
+    gap: 9px;
+  }
+  .mpn-checkbox-row strong {
+    font-size: 10px;
+  }
+  .mpn-checkbox-row div > span {
+    font-size: 9px;
+  }
+  .mpn-checkbox-row small {
+    font-size: 8px;
+  }
+  .mpn-checkbox-row .linked-label {
+    font-size: 8px;
+    padding: 4px;
+  }
+  .mpn-approval {
+    font-size: 8px;
+  }
+  .mpn-link-modal .modal-footer > span {
+    font-size: 8px;
+  }
+  .mpn-link-modal .modal-footer > .btn {
+    font-size: 9px;
+    padding: 9px 10px;
+  }
+  .mpn-source-field textarea {
+    font-size: 11px;
+  }
+  .map-selected > .button-group {
+    max-width: 130px;
+  }
+}
