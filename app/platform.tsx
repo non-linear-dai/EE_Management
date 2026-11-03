@@ -37,7 +37,15 @@ import {
   LogOut,
   Command,
   GitBranch,
+  Calculator,
+  Hash,
 } from "lucide-react";
+import BomWorkbench from "./bom-workbench";
+import MrpPlanner from "./mrp-planner";
+import SupplyMap from "./supply-map";
+import LocationFields from "./location-fields";
+import NumberingSettings from "./numbering-settings";
+import { rulesFor, nextPartNumber } from "@/lib/ee/numbering";
 import type { LucideIcon } from "lucide-react";
 import { DEMO } from "@/lib/ee/demo";
 import type {
@@ -52,7 +60,14 @@ import {
   materialProducts,
   assemblyMaterials,
 } from "@/lib/ee/relations";
-type View = "materials" | "relations" | "products" | "supply" | "activity";
+type View =
+  | "materials"
+  | "relations"
+  | "products"
+  | "supply"
+  | "activity"
+  | "mrp"
+  | "numbering";
 type Modal = {
   kind: string;
   id?: string;
@@ -89,6 +104,7 @@ const navs: { id: View; label: string; icon: LucideIcon }[] = [
   { id: "relations", label: "关系图谱", icon: Network },
   { id: "products", label: "产品与总成", icon: Layers },
   { id: "supply", label: "制造与供应", icon: Factory },
+  { id: "mrp", label: "MRP 用量计算", icon: Calculator },
 ];
 function Badge({
   children,
@@ -199,13 +215,24 @@ export default function Platform({ user }: { user: string }) {
     [catalogTab, setCatalogTab] = useState("products"),
     [mobile, setMobile] = useState(false),
     [busy, setBusy] = useState(false),
-    [help, setHelp] = useState(false);
+    [help, setHelp] = useState(false),
+    [mrpInitial, setMrpInitial] = useState<{
+      kind: "product" | "assembly";
+      id: string;
+    }>(),
+    [supplyMode, setSupplyMode] = useState("map");
   useEffect(() => {
     fetch("/api/workspace")
       .then(async (r) => {
         const j = (await r.json()) as Workspace & { error?: string };
         if (!r.ok) throw new Error(j.error);
-        if (j.materials.length || j.products.length || j.assemblies.length) {
+        if (
+          j.materials.length ||
+          j.products.length ||
+          j.assemblies.length ||
+          j.sites.length ||
+          j.mpns.length
+        ) {
           setD(j);
           setDemo(false);
           const requested = new URLSearchParams(window.location.search).get(
@@ -220,6 +247,8 @@ export default function Platform({ user }: { user: string }) {
             setDetail(true);
           setProduct(j.products[0]?.id || "");
           setAssembly(j.assemblies[0]?.id || "");
+        } else {
+          setD((current) => ({ ...current, numberingRules: j.numberingRules }));
         }
       })
       .catch((e) => setError(e.message))
@@ -237,7 +266,15 @@ export default function Platform({ user }: { user: string }) {
     const params = new URLSearchParams(window.location.search);
     const v = params.get("view") as View;
     if (
-      ["materials", "relations", "products", "supply", "activity"].includes(v)
+      [
+        "materials",
+        "relations",
+        "products",
+        "supply",
+        "activity",
+        "mrp",
+        "numbering",
+      ].includes(v)
     )
       setView(v);
     const id = params.get("material");
@@ -356,11 +393,31 @@ export default function Platform({ user }: { user: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind: modal.kind, id: modal.id, data }),
     });
-    const j = (await r.json()) as Workspace & { error?: string };
+    const j = (await r.json()) as Workspace & {
+      error?: string;
+      savedRecord?: { kind: string; id: string; number: string | null };
+    };
     if (!r.ok) throw new Error(j.error);
     accept(j);
+    if (!modal.id && j.savedRecord) {
+      const saved = j.savedRecord;
+      if (saved.kind === "material") {
+        setSelected(saved.id);
+        setDetail(true);
+        setTab("overview");
+      }
+      if (saved.kind === "product") setProduct(saved.id);
+      if (saved.kind === "assembly") {
+        setAssembly(saved.id);
+        setCatalogTab("assemblies");
+      }
+    }
     setModal(null);
-    setToast("已保存至工作区");
+    setToast(
+      j.savedRecord?.number
+        ? "已保存 · " + j.savedRecord.number
+        : "已保存至工作区",
+    );
   }
   async function remove(kind: string, id: string) {
     if (demo) {
@@ -446,6 +503,8 @@ export default function Platform({ user }: { user: string }) {
     products: "产品与总成",
     supply: "制造与供应",
     activity: "变更记录",
+    mrp: "MRP 用量计算",
+    numbering: "内部编码规则",
   };
   function stats() {
     return (
@@ -1492,128 +1551,26 @@ export default function Platform({ user }: { user: string }) {
     );
   }
   function bomTable(a: Assembly) {
-    const b = d.boms.find((b) => b.assemblyId === a.id && b.status === "生效");
-    const lines = d.bomLines.filter((l) => l.bomId === b?.id);
     return (
-      <>
-        <div className="section-toolbar">
-          <div>
-            <h3>
-              独立 BOM{" "}
-              <span className="gray-tag">Rev {b?.revision || a.revision}</span>
-            </h3>
-            <p>
-              {lines.length} 个直接行项目 · {assemblyMaterials(d, a.id).length}{" "}
-              颗展开物料
-            </p>
-          </div>
-          <div className="button-group">
-            <Btn
-              small
-              onClick={() =>
-                exportCsv(
-                  [
-                    ["零件号", "名称", "类型", "数量", "位号", "说明"],
-                    ...lines.map((l) => {
-                      const item = l.materialId
-                        ? d.materials.find((m) => m.id === l.materialId)
-                        : d.assemblies.find((a) => a.id === l.childAssemblyId);
-                      return [
-                        item?.number,
-                        item?.name,
-                        l.materialId ? "物料" : "子总成",
-                        l.quantity,
-                        l.references,
-                        l.notes,
-                      ];
-                    }),
-                  ],
-                  a.number + "-BOM.csv",
-                )
-              }
-            >
-              <Download size={14} />
-              导出
-            </Btn>
-            <Btn
-              small
-              primary
-              disabled={!b}
-              onClick={() => create("bomLine", "添加 BOM 行", { bomId: b?.id })}
-            >
-              <Plus size={15} />
-              添加行
-            </Btn>
-          </div>
-        </div>
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>零件号 / 名称</th>
-                <th>类型</th>
-                <th>数量</th>
-                <th>位号</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((l) => {
-                const m = l.materialId
-                  ? d.materials.find((m) => m.id === l.materialId)
-                  : d.assemblies.find((a) => a.id === l.childAssemblyId);
-                return (
-                  <tr key={l.id}>
-                    <td>
-                      <button
-                        className="table-text-link"
-                        onClick={() =>
-                          l.materialId
-                            ? openMaterial(l.materialId)
-                            : setAssembly(l.childAssemblyId!)
-                        }
-                      >
-                        <strong className="mono">{m?.number}</strong>
-                        <small>{m?.name}</small>
-                      </button>
-                    </td>
-                    <td>
-                      <span className="gray-tag">
-                        {l.materialId ? "物料" : "子总成"}
-                      </span>
-                    </td>
-                    <td className="mono">{l.quantity}</td>
-                    <td>{l.references || "—"}</td>
-                    <td>
-                      <div className="button-group">
-                        <button
-                          className="text-btn"
-                          onClick={() => edit("bomLine", "编辑 BOM 行", l)}
-                        >
-                          编辑
-                        </button>
-                        <button
-                          className="icon-btn danger"
-                          aria-label="移除 BOM 行"
-                          onClick={() => remove("bomLine", l.id)}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {!lines.length && (
-          <Empty
-            text="这份 BOM 还没有行项目"
-            sub="添加物料或子总成，开始构建独立 BOM。"
-          />
-        )}
-      </>
+      <BomWorkbench
+        key={a.id}
+        d={d}
+        assembly={a}
+        demo={demo}
+        onAdd={(bomId) => create("bomLine", "添加 BOM 行", { bomId })}
+        onEdit={(l) => edit("bomLine", "编辑 BOM 行", l)}
+        onRemove={(id) => remove("bomLine", id)}
+        onMaterial={openMaterial}
+        onCalculate={() => {
+          setMrpInitial({ kind: "assembly", id: a.id });
+          go("mrp");
+        }}
+        onData={(data) => {
+          accept(data);
+          setToast("BOM 已批量保存");
+        }}
+        onExport={exportCsv}
+      />
     );
   }
   function productsView() {
@@ -1696,9 +1653,21 @@ export default function Platform({ user }: { user: string }) {
                       <h2>{p.name}</h2>
                       <Badge>{p.status}</Badge>
                     </div>
-                    <Btn small onClick={() => edit("product", "编辑产品", p)}>
-                      编辑产品
-                    </Btn>
+                    <div className="button-group">
+                      <Btn
+                        small
+                        onClick={() => {
+                          setMrpInitial({ kind: "product", id: p.id });
+                          go("mrp");
+                        }}
+                      >
+                        <Calculator size={14} />
+                        整机 MRP
+                      </Btn>
+                      <Btn small onClick={() => edit("product", "编辑产品", p)}>
+                        编辑产品
+                      </Btn>
+                    </div>
                   </div>
                   <div className="section-toolbar">
                     <div>
@@ -1831,45 +1800,70 @@ export default function Platform({ user }: { user: string }) {
             </Btn>
           </div>
         </div>
-        <div className="site-grid">
-          {d.sites
-            .filter((s) =>
-              (s.name + s.operator + s.country + s.city)
-                .toLowerCase()
-                .includes(query.toLowerCase()),
-            )
-            .map((s) => (
-              <article key={s.id} className="panel site-card">
-                <div className="site-top">
-                  <div className="factory-icon">
-                    <Factory size={25} />
-                  </div>
-                  <span className="gray-tag">{s.country}</span>
-                </div>
-                <h3>{s.name}</h3>
-                <p>{s.operator}</p>
-                <div className="site-location">
-                  <MapPin size={14} />
-                  {s.country} · {s.city}
-                </div>
-                <div className="site-bottom">
-                  <span>
-                    {
-                      new Set(
-                        d.mpnSites
-                          .filter((l) => l.siteId === s.id)
-                          .map((l) => l.mpnId),
-                      ).size
-                    }{" "}
-                    个关联 MPN
-                  </span>
-                  <button onClick={() => edit("site", "编辑制造工厂", s)}>
-                    编辑 <ArrowUpRight size={14} />
-                  </button>
-                </div>
-              </article>
-            ))}
+        <div className="supply-view-tabs segmented">
+          <button
+            className={supplyMode === "map" ? "active" : ""}
+            onClick={() => setSupplyMode("map")}
+          >
+            <MapPin size={14} />
+            地图视图
+          </button>
+          <button
+            className={supplyMode === "list" ? "active" : ""}
+            onClick={() => setSupplyMode("list")}
+          >
+            <Factory size={14} />
+            工厂名录
+          </button>
         </div>
+        {supplyMode === "map" && (
+          <SupplyMap
+            d={d}
+            query={query}
+            onEdit={(s) => edit("site", "编辑制造工厂与定位", s)}
+          />
+        )}
+        {supplyMode === "list" && (
+          <div className="site-grid">
+            {d.sites
+              .filter((s) =>
+                (s.name + s.operator + s.country + s.city)
+                  .toLowerCase()
+                  .includes(query.toLowerCase()),
+              )
+              .map((s) => (
+                <article key={s.id} className="panel site-card">
+                  <div className="site-top">
+                    <div className="factory-icon">
+                      <Factory size={25} />
+                    </div>
+                    <span className="gray-tag">{s.country}</span>
+                  </div>
+                  <h3>{s.name}</h3>
+                  <p>{s.operator}</p>
+                  <div className="site-location">
+                    <MapPin size={14} />
+                    {s.country} · {s.city}
+                  </div>
+                  <div className="site-bottom">
+                    <span>
+                      {
+                        new Set(
+                          d.mpnSites
+                            .filter((l) => l.siteId === s.id)
+                            .map((l) => l.mpnId),
+                        ).size
+                      }{" "}
+                      个关联 MPN
+                    </span>
+                    <button onClick={() => edit("site", "编辑制造工厂", s)}>
+                      编辑 <ArrowUpRight size={14} />
+                    </button>
+                  </div>
+                </article>
+              ))}
+          </div>
+        )}
         <section className="panel supply-records">
           <div className="panel-heading">
             <div>
@@ -2049,6 +2043,13 @@ export default function Platform({ user }: { user: string }) {
             <Activity size={18} />
             <span>变更记录</span>
           </button>
+          <button
+            className={view === "numbering" ? "active" : ""}
+            onClick={() => go("numbering")}
+          >
+            <Hash size={18} />
+            <span>内部编码规则</span>
+          </button>
           <button onClick={() => setHelp(true)}>
             <BookOpen size={18} />
             <span>使用指南</span>
@@ -2081,7 +2082,7 @@ export default function Platform({ user }: { user: string }) {
         </div>
         <div className="sidebar-version">
           <span className="status-dot" />
-          CoreLink 工作台 <span>v1.0</span>
+          CoreLink 工作台 <span>v2.0</span>
         </div>
       </aside>
       {mobile && (
@@ -2162,7 +2163,11 @@ export default function Platform({ user }: { user: string }) {
                         ? "维护产品结构与独立 BOM，让共享总成高效复用。"
                         : view === "supply"
                           ? "连接器件与制造现场，掌握供应链的每一站。"
-                          : "每一次维护，都有记录。"}
+                          : view === "mrp"
+                            ? "从多产品需求到逐级用量，按内部零件号精确汇总。"
+                            : view === "numbering"
+                              ? "统一产品、PCBA / TLA 与电子物料的企业内部零件号。"
+                              : "每一次维护，都有记录。"}
                 </p>
               </div>
               {view === "materials" ? (
@@ -2214,17 +2219,41 @@ export default function Platform({ user }: { user: string }) {
               </button>
             </div>
           )}
-          {detail
-            ? detailView()
-            : view === "materials"
-              ? materialsView()
-              : view === "relations"
-                ? graphView()
-                : view === "products"
-                  ? productsView()
-                  : view === "supply"
-                    ? supplyView()
-                    : activityView()}
+          {detail ? (
+            detailView()
+          ) : view === "materials" ? (
+            materialsView()
+          ) : view === "relations" ? (
+            graphView()
+          ) : view === "products" ? (
+            productsView()
+          ) : view === "supply" ? (
+            supplyView()
+          ) : view === "numbering" ? (
+            <NumberingSettings
+              d={d}
+              onData={(data) => {
+                setD((current) => ({
+                  ...current,
+                  numberingRules: data.numberingRules,
+                }));
+              }}
+            />
+          ) : view === "mrp" ? null : (
+            activityView()
+          )}
+          {view === "mrp" && (
+            <div style={{ display: detail ? "none" : undefined }}>
+              <MrpPlanner
+                query={query}
+                key={(mrpInitial?.kind || "product") + (mrpInitial?.id || "")}
+                d={d}
+                initial={mrpInitial}
+                onMaterial={openMaterial}
+                onExport={exportCsv}
+              />
+            </div>
+          )}
           <footer className="app-footer">
             <span>
               芯链 CORELINK <span>把复杂的物料关系，变得清晰。</span>
@@ -2253,6 +2282,7 @@ export default function Platform({ user }: { user: string }) {
       )}
       {modal && (
         <RecordModal
+          key={modal.kind + (modal.id || "new")}
           modal={modal}
           d={d}
           demo={demo}
@@ -2301,11 +2331,25 @@ export default function Platform({ user }: { user: string }) {
             </p>
             <p>
               在「产品与总成」建立产品、总成及 BOM。TLA
-              可包含子总成，系统会阻止循环引用。点击「关系图谱」逐层下钻，物料档案中的「应用与反查」会包含间接使用关系。
+              可包含多级子总成，系统会阻止循环引用。点击「关系图谱」逐层下钻，物料档案中的「应用与反查」会包含间接使用关系。
+            </p>
+            <p>
+              在「产品与总成」查看可折叠的多层
+              BOM，逐行维护单级用量、单位和损耗加成。大批量用料可通过 CSV
+              预检后整体追加，错误不会留下半份 BOM。在「MRP
+              用量计算」输入多个产品 /
+              总成需求，系统逐级累乘并按内部零件号汇总；库存仅扣一次。
             </p>
             <p>
               制造工厂按 MPN
-              关联，支持多个前道和后道来源。记录出处和核验日期，未记录的制造地会显示待补充。
+              关联，支持多个前道和后道来源。地图可按制造阶段筛选，并通过城市检索或手动标点维护
+              WGS84
+              坐标。城市中心和实际厂区坐标必须分别标识。记录出处和核验日期，未记录的制造地会显示待补充。
+            </p>
+            <p>
+              企业产品、PCBA / TLA 和电子物料都使用企业内部零件号，例如
+              1234567-00-A。后两段含义与 BOM
+              版本独立；留空可按编码规则自动分配。已有历史编号可保留。
             </p>
             <div className="notice">
               <Database size={18} />
@@ -2373,9 +2417,15 @@ function RecordModal({
         key: "number",
         label: "企业内部零件号",
         value: "",
-        hint: "唯一标识，例如 EE-2001",
+        optional: !modal.id,
+        hint: "留空自动编号，例如 1234567-00-A",
       },
       { key: "name", label: "物料名称" },
+      {
+        key: "unit",
+        label: "基本单位",
+        options: opts(["pcs", "m", "g", "kg", "L", "set"]),
+      },
       { key: "category", label: "物料分类", options: opts(allCategories) },
       {
         key: "package",
@@ -2434,7 +2484,12 @@ function RecordModal({
       },
     ],
     product: [
-      { key: "number", label: "产品编号" },
+      {
+        key: "number",
+        label: "企业内部零件号",
+        optional: !modal.id,
+        hint: "留空自动分配，例如 1234567-00-A",
+      },
       { key: "name", label: "产品名称" },
       { key: "family", label: "产品系列" },
       {
@@ -2444,7 +2499,12 @@ function RecordModal({
       },
     ],
     assembly: [
-      { key: "number", label: "总成编号" },
+      {
+        key: "number",
+        label: "企业内部零件号",
+        optional: !modal.id,
+        hint: "留空自动分配，例如 1234567-00-A",
+      },
       { key: "name", label: "总成名称" },
       { key: "type", label: "总成类型", options: opts(["PCBA", "TLA"]) },
       {
@@ -2466,7 +2526,13 @@ function RecordModal({
         options: itemType === "material" ? mats : asms,
         wide: true,
       },
-      { key: "quantity", label: "单总成用量", type: "number", value: "1" },
+      {
+        key: "quantity",
+        label: "单级用量（每个父级）",
+        type: "number",
+        value: "1",
+      },
+      { key: "scrapRate", label: "损耗加成 %", type: "number", value: "0" },
       {
         key: "references",
         label: "参考位号",
@@ -2484,8 +2550,6 @@ function RecordModal({
     site: [
       { key: "name", label: "工厂 / 厂区名称", wide: true },
       { key: "operator", label: "运营法人 / 制造商", wide: true },
-      { key: "country", label: "国家 / 地区" },
-      { key: "city", label: "城市 / 区域" },
     ],
     mpnSite: [
       {
@@ -2557,6 +2621,19 @@ function RecordModal({
         const data: Record<string, unknown> = {};
         for (const f of fields)
           data[f.key] = String(fd.get(f.key) ?? "").trim();
+        if (modal.kind === "site") {
+          for (const key of [
+            "country",
+            "city",
+            "address",
+            "locationPrecision",
+            "locationSource",
+          ])
+            data[key] = String(fd.get(key) || "");
+          for (const key of ["latitude", "longitude"])
+            data[key] =
+              String(fd.get(key) || "") === "" ? null : Number(fd.get(key));
+        }
         if (modal.kind === "material") {
           const pairs = String(data.parameters)
             .split("\n")
@@ -2684,13 +2761,29 @@ function RecordModal({
                         readOnly={f.key === "revision" && !!modal.id}
                         placeholder={f.hint}
                         maxLength={200}
-                        min={f.type === "number" ? "0.001" : undefined}
+                        min={
+                          f.type === "number"
+                            ? f.key === "scrapRate"
+                              ? "0"
+                              : "0.000001"
+                            : undefined
+                        }
+                        max={
+                          f.key === "scrapRate"
+                            ? "100"
+                            : f.type === "number"
+                              ? "1000000"
+                              : undefined
+                        }
                         step={f.type === "number" ? "any" : undefined}
                       />
                     )}
                   </label>
                 ))}
               </div>
+              {modal.kind === "site" && (
+                <LocationFields initial={modal.initial} />
+              )}
             </>
           )}
           {err && (

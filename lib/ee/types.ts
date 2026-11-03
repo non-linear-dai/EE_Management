@@ -4,6 +4,7 @@ export type Material = {
   name: string;
   category: string;
   package: string;
+  unit: string;
   lifecycle: string;
   description: string;
   parameters: string;
@@ -25,6 +26,11 @@ export type Site = {
   operator: string;
   country: string;
   city: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  locationPrecision: string;
+  locationSource: string;
 };
 export type MpnSite = {
   id: string;
@@ -66,6 +72,7 @@ export type BomLine = {
   materialId: string | null;
   childAssemblyId: string | null;
   quantity: number;
+  scrapRate: number;
   references: string;
   notes: string;
 };
@@ -87,4 +94,14 @@ export type Workspace = {
   boms: Bom[];
   bomLines: BomLine[];
   auditLogs: Audit[];
+  numberingRules: NumberingRule[];
+};
+
+export type NumberingKind = "product" | "PCBA" | "TLA" | "material";
+export type NumberingRule = {
+  kind: NumberingKind;
+  prefix: string;
+  suffix: string;
+  digits: number;
+  start: number;
 };

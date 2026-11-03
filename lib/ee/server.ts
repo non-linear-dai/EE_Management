@@ -26,6 +26,7 @@ export async function workspace(): Promise<Workspace> {
     "boms",
     "bomLines",
     "auditLogs",
+    "numberingRules",
   ] as const;
   const entries = await Promise.all(
     names.map(async (k) => [k, await db.select().from(tables[k])]),
@@ -45,13 +46,17 @@ export function errorResponse(e: unknown) {
         ? "请先登录"
         : m === "FORBIDDEN"
           ? "请求来源不允许"
-          : m.includes("UNIQUE")
-            ? "该编号或关联已存在，请检查后重试"
-            : m.includes("FOREIGN KEY")
-              ? "关联对象不存在，请刷新后重试"
-              : m.includes("DATABASE")
-                ? "数据库连接暂不可用，请稍后重试"
-                : m,
+          : m.includes("GLOBAL_PART_NUMBER_CONFLICT")
+            ? "该内部零件号已被其他产品、总成或物料使用"
+            : m.includes("BOM_CYCLE")
+              ? "不能建立循环总成关系"
+              : m.includes("UNIQUE")
+                ? "该编号或关联已存在，请检查后重试"
+                : m.includes("FOREIGN KEY")
+                  ? "关联对象不存在，请刷新后重试"
+                  : m.includes("DATABASE")
+                    ? "数据库连接暂不可用，请稍后重试"
+                    : m,
     },
     { status: unauthorized ? 401 : m === "FORBIDDEN" ? 403 : 400 },
   );

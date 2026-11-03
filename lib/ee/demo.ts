@@ -1,4 +1,5 @@
 import type { Workspace } from "./types";
+import { DEFAULT_RULES } from "./numbering.ts";
 const rows = [
   [
     "1001",
@@ -264,6 +265,7 @@ export const DEMO: Workspace = {
     name: r[1],
     category: r[2],
     package: r[3],
+    unit: "pcs",
     lifecycle: i === 4 ? "评估中" : i === 14 ? "不推荐新设计" : "量产",
     description:
       "用于工业级电子产品的" +
@@ -306,6 +308,11 @@ export const DEMO: Workspace = {
       operator: "示例晶圆代工厂",
       country: "中国",
       city: "上海",
+      address: "",
+      latitude: null,
+      longitude: null,
+      locationPrecision: "未定位",
+      locationSource: "",
     },
     {
       id: "site-2",
@@ -313,6 +320,11 @@ export const DEMO: Workspace = {
       operator: "示例晶圆代工厂",
       country: "马来西亚",
       city: "槟城",
+      address: "",
+      latitude: null,
+      longitude: null,
+      locationPrecision: "未定位",
+      locationSource: "",
     },
     {
       id: "site-3",
@@ -320,6 +332,11 @@ export const DEMO: Workspace = {
       operator: "示例封测服务商",
       country: "中国",
       city: "苏州",
+      address: "",
+      latitude: null,
+      longitude: null,
+      locationPrecision: "未定位",
+      locationSource: "",
     },
     {
       id: "site-4",
@@ -327,6 +344,11 @@ export const DEMO: Workspace = {
       operator: "示例封测服务商",
       country: "菲律宾",
       city: "拉古纳",
+      address: "",
+      latitude: null,
+      longitude: null,
+      locationPrecision: "未定位",
+      locationSource: "",
     },
   ],
   mpnSites: [
@@ -462,6 +484,7 @@ export const DEMO: Workspace = {
   })),
   bomLines: [],
   auditLogs: [],
+  numberingRules: DEFAULT_RULES,
 };
 const lineGroups = [
   [
@@ -506,6 +529,7 @@ lineGroups.forEach((items, i) =>
       materialId: "mat-" + r[0],
       childAssemblyId: null,
       quantity: Number(r[1]),
+      scrapRate: 0,
       references: String(r[2]),
       notes: "",
     }),
@@ -524,6 +548,136 @@ for (const [b, c] of [
     materialId: null,
     childAssemblyId: "asm-" + c,
     quantity: 1,
+    scrapRate: 0,
     references: "",
     notes: "子总成",
   });
+
+const cityPoints: Record<string, [number, number]> = {
+  "site-1": [31.22222, 121.45806],
+  "site-2": [5.41123, 100.33543],
+  "site-3": [31.30408, 120.59538],
+  "site-4": [14.18767, 121.12508],
+};
+DEMO.sites = DEMO.sites.map((s) => ({
+  ...s,
+  address: s.country + " " + s.city,
+  latitude: cityPoints[s.id][0],
+  longitude: cityPoints[s.id][1],
+  locationPrecision: "城市级",
+  locationSource: "演示城市中心点；非实际厂区位置",
+}));
+// Dense, four-tier example: product → TLA → TLA → PCBA → components.
+for (let i = 0; i < 160; i++) {
+  const id = "dense-" + i,
+    isResistor = i % 2 === 0;
+  DEMO.materials.push({
+    id,
+    number: "DEMO-" + i,
+    name: `${isResistor ? "精密贴片电阻" : "去耦陶瓷电容"} ${String(i + 1).padStart(3, "0")}`,
+    category: isResistor ? "电阻" : "电容",
+    package: isResistor ? "0603" : "0402",
+    unit: "pcs",
+    lifecycle: "量产",
+    description: "多层 BOM 大批量行项目演示；非实际工程选型。",
+    parameters: JSON.stringify(
+      isResistor
+        ? { 阻值: "10 kΩ", 精度: "±1%" }
+        : { 容值: "100 nF", 介质: "X7R" },
+    ),
+    updatedAt: "2026-11-04T00:00:00Z",
+  });
+  DEMO.mpns.push({
+    id: "dense-mpn-" + i,
+    materialId: id,
+    manufacturer: "示例器件厂商",
+    mpn: `DEMO-${isResistor ? "R" : "C"}-${String(i + 1).padStart(4, "0")}`,
+    approval: "已批准",
+    lifecycle: "在产",
+    datasheet: "",
+    notes: "仅为大批量 BOM 演示记录。",
+  });
+  DEMO.bomLines.push({
+    id: "dense-line-" + i,
+    bomId: "bom-7",
+    materialId: id,
+    childAssemblyId: null,
+    quantity: isResistor ? 4 : 8,
+    scrapRate: isResistor ? 1 : 2,
+    references: (isResistor ? "R" : "C") + (i + 1),
+    notes: "独立用料行",
+  });
+}
+DEMO.assemblies.push(
+  {
+    id: "asm-7",
+    number: "PCBA-005",
+    name: "高密度采集主板",
+    type: "PCBA",
+    revision: "A.0",
+  },
+  {
+    id: "asm-8",
+    number: "TLA-003",
+    name: "多通道采集子系统",
+    type: "TLA",
+    revision: "A.0",
+  },
+  {
+    id: "asm-9",
+    number: "TLA-004",
+    name: "工业数据采集整机总成",
+    type: "TLA",
+    revision: "A.0",
+  },
+);
+for (let i = 7; i <= 9; i++)
+  DEMO.boms.push({
+    id: "bom-" + i,
+    assemblyId: "asm-" + i,
+    revision: "A.0",
+    status: "生效",
+  });
+DEMO.bomLines.push({
+  id: "dense-pcb",
+  bomId: "bom-7",
+  materialId: "mat-1008",
+  childAssemblyId: null,
+  quantity: 1,
+  scrapRate: 0,
+  references: "PCB1",
+  notes: "",
+});
+for (const [parent, child, qty] of [
+  [8, 7, 2],
+  [8, 4, 1],
+  [9, 8, 3],
+  [9, 2, 2],
+  [9, 3, 1],
+])
+  DEMO.bomLines.push({
+    id: `deep-${parent}-${child}`,
+    bomId: "bom-" + parent,
+    materialId: null,
+    childAssemblyId: "asm-" + child,
+    quantity: qty,
+    scrapRate: 0,
+    references: "",
+    notes: "多层共享子总成示例",
+  });
+DEMO.products.unshift({
+  id: "prod-5",
+  number: "PRD-005",
+  name: "多通道工业采集系统 X5",
+  family: "多层 BOM 演示",
+  status: "试产",
+});
+DEMO.productAssemblies.push({
+  id: "pa-deep",
+  productId: "prod-5",
+  assemblyId: "asm-9",
+  quantity: 2,
+});
+DEMO.products.forEach((p, i) => (p.number = String(1000001 + i) + "-00-A"));
+DEMO.assemblies.forEach((a, i) => (a.number = String(1000101 + i) + "-00-A"));
+DEMO.materials.forEach((m, i) => (m.number = String(1001001 + i) + "-00-A"));

@@ -6,11 +6,13 @@ import {
   workspace,
   errorResponse,
 } from "@/lib/ee/server";
+import { nextPartNumber, rulesFor, matchesRule } from "@/lib/ee/numbering";
+import type { NumberingKind } from "@/lib/ee/types";
 import { wouldCycle } from "@/lib/ee/relations";
 const str = z.string().trim().min(1, "请填写必填项").max(200);
 const schemas = {
   material: z.object({
-    number: str,
+    number: z.string().trim().max(80),
     name: str,
     category: z.enum([
       "微控制器",
@@ -29,6 +31,7 @@ const schemas = {
       "其他",
     ]),
     package: str,
+    unit: z.enum(["pcs", "m", "g", "kg", "L", "set"]).default("pcs"),
     lifecycle: z.enum(["量产", "评估中", "不推荐新设计", "停产"]),
     description: z.string().max(3000),
     parameters: z
@@ -66,13 +69,13 @@ const schemas = {
     notes: z.string().max(3000),
   }),
   product: z.object({
-    number: str,
+    number: z.string().trim().max(80),
     name: str,
     family: str,
     status: z.enum(["量产", "试产", "研发", "停产"]),
   }),
   assembly: z.object({
-    number: str,
+    number: z.string().trim().max(80),
     name: str,
     type: z.enum(["PCBA", "TLA"]),
     revision: str,
@@ -87,7 +90,16 @@ const schemas = {
       bomId: str,
       materialId: z.string().nullable(),
       childAssemblyId: z.string().nullable(),
-      quantity: z.coerce.number().positive().max(1000000),
+      quantity: z.coerce
+        .number()
+        .finite()
+        .positive()
+        .max(1000000)
+        .refine(
+          (v) => Math.abs(v * 1e6 - Math.round(v * 1e6)) < 0.001,
+          "数量最多支持六位小数",
+        ),
+      scrapRate: z.coerce.number().finite().min(0).max(100).default(0),
       references: z.string().max(3000),
       notes: z.string().max(3000),
     })
@@ -95,7 +107,40 @@ const schemas = {
       (v) => !!v.materialId !== !!v.childAssemblyId,
       "请选择一个物料或子总成",
     ),
-  site: z.object({ name: str, operator: str, country: str, city: str }),
+  site: z
+    .object({
+      name: str,
+      operator: str,
+      country: str,
+      city: str,
+      address: z.string().max(1000).default(""),
+      latitude: z.number().finite().min(-90).max(90).nullable().default(null),
+      longitude: z
+        .number()
+        .finite()
+        .min(-180)
+        .max(180)
+        .nullable()
+        .default(null),
+      locationPrecision: z
+        .enum(["未定位", "城市级", "厂区级", "手动标点（待核验）"])
+        .default("未定位"),
+      locationSource: z.string().max(1000).default(""),
+    })
+    .superRefine((v, c) => {
+      if ((v.latitude === null) !== (v.longitude === null))
+        c.addIssue({ code: "custom", message: "纬度与经度必须成对填写" });
+      if (
+        v.latitude !== null &&
+        (v.locationPrecision === "未定位" || !v.locationSource.trim())
+      )
+        c.addIssue({
+          code: "custom",
+          message: "有坐标时需填写定位精度和坐标来源",
+        });
+      if (v.latitude === null && v.locationPrecision !== "未定位")
+        c.addIssue({ code: "custom", message: "没有坐标时请选择未定位" });
+    }),
   mpnSite: z.object({
     mpnId: str,
     siteId: str,
@@ -166,52 +211,95 @@ export async function POST(req: Request) {
         throw new Error("不能建立循环总成关系");
     }
     if (kind === "material") d.updatedAt = new Date().toISOString();
-    const cols = Object.keys(d).map((k) =>
-      k.replace(/[A-Z]/g, (s) => "_" + s.toLowerCase()),
-    );
-    const values = Object.values(d);
-    const table = tableNames[kind];
-    const stmts = [];
-    if (body.id) {
+    const numbered =
+      kind === "material" || kind === "product" || kind === "assembly";
+    const numberingKind: NumberingKind =
+      kind === "assembly" ? (d.type as NumberingKind) : (kind as NumberingKind);
+    const automatic = numbered && !body.id && !d.number;
+    const now = new Date().toISOString();
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (numbered) {
+        const w = await workspace();
+        if (automatic) d.number = nextPartNumber(w, numberingKind);
+        if (!d.number) throw new Error("内部零件号不能为空");
+        const prior =
+          kind === "material"
+            ? w.materials.find((x) => x.id === id)
+            : kind === "product"
+              ? w.products.find((x) => x.id === id)
+              : w.assemblies.find((x) => x.id === id);
+        if (!prior || prior.number !== d.number) {
+          const rule = rulesFor(w).find((r) => r.kind === numberingKind)!;
+          if (!matchesRule(String(d.number), rule))
+            throw new Error(
+              "内部零件号不符合当前规则：" +
+                rule.prefix +
+                "0".repeat(rule.digits) +
+                rule.suffix,
+            );
+        }
+      }
+      const cols = Object.keys(d).map((k) =>
+        k.replace(/[A-Z]/g, (s) => "_" + s.toLowerCase()),
+      );
+      const values = Object.values(d);
+      const table = tableNames[kind];
+      const stmts = [];
+      if (body.id)
+        stmts.push(
+          db
+            .prepare(
+              `UPDATE ${table} SET ${cols.map((c) => '"' + c + '"=?').join(",")} WHERE id=?`,
+            )
+            .bind(...values, id),
+        );
+      else
+        stmts.push(
+          db
+            .prepare(
+              `INSERT INTO ${table} (id,${cols.map((c) => '"' + c + '"').join(",")}) VALUES (?,${cols.map(() => "?").join(",")})`,
+            )
+            .bind(id, ...values),
+        );
+      if (kind === "assembly" && !body.id)
+        stmts.push(
+          db
+            .prepare(
+              "INSERT INTO boms (id,assembly_id,revision,status) VALUES (?,?,?,?)",
+            )
+            .bind(crypto.randomUUID(), id, d.revision, "生效"),
+        );
       stmts.push(
         db
           .prepare(
-            `UPDATE ${table} SET ${cols.map((c) => '"' + c + '"=?').join(",")} WHERE id=?`,
+            "INSERT INTO audit_logs (id,actor,action,entity,created_at) VALUES (?,?,?,?,?)",
           )
-          .bind(...values, id),
+          .bind(
+            crypto.randomUUID(),
+            user,
+            body.id ? "更新" : "新增",
+            String(d.number || d.mpn || d.name || kind),
+            now,
+          ),
       );
-    } else {
-      stmts.push(
-        db
-          .prepare(
-            `INSERT INTO ${table} (id,${cols.map((c) => '"' + c + '"').join(",")}) VALUES (?,${cols.map(() => "?").join(",")})`,
-          )
-          .bind(id, ...values),
-      );
-    }
-    if (kind === "assembly" && !body.id)
-      stmts.push(
-        db
-          .prepare(
-            "INSERT INTO boms (id,assembly_id,revision,status) VALUES (?,?,?,?)",
-          )
-          .bind(crypto.randomUUID(), id, d.revision, "生效"),
-      );
-    stmts.push(
-      db
-        .prepare(
-          "INSERT INTO audit_logs (id,actor,action,entity,created_at) VALUES (?,?,?,?,?)",
+      try {
+        await db.batch(stmts);
+        break;
+      } catch (e) {
+        const m = String(e);
+        if (
+          automatic &&
+          attempt < 4 &&
+          (m.includes("UNIQUE") || m.includes("GLOBAL_PART_NUMBER_CONFLICT"))
         )
-        .bind(
-          crypto.randomUUID(),
-          user,
-          body.id ? "更新" : "新增",
-          String(d.number || d.mpn || d.name || kind),
-          new Date().toISOString(),
-        ),
-    );
-    await db.batch(stmts);
-    return Response.json(await workspace());
+          continue;
+        throw e;
+      }
+    }
+    return Response.json({
+      ...(await workspace()),
+      savedRecord: { kind, id, number: d.number || null },
+    });
   } catch (e) {
     return errorResponse(e);
   }

@@ -13,6 +13,7 @@ export const materials = sqliteTable("materials", {
   name: text("name").notNull(),
   category: text("category").notNull(),
   package: text("package").notNull(),
+  unit: text("unit").notNull().default("pcs"),
   lifecycle: text("lifecycle").notNull().default("量产"),
   description: text("description").notNull().default(""),
   parameters: text("parameters").notNull().default("{}"),
@@ -40,6 +41,11 @@ export const sites = sqliteTable("manufacturing_sites", {
   operator: text("operator").notNull(),
   country: text("country").notNull(),
   city: text("city").notNull(),
+  address: text("address").notNull().default(""),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
+  locationPrecision: text("location_precision").notNull().default("未定位"),
+  locationSource: text("location_source").notNull().default(""),
 });
 export const mpnSites = sqliteTable("mpn_sites", {
   id: text("id").primaryKey(),
@@ -106,6 +112,7 @@ export const bomLines = sqliteTable(
     materialId: text("material_id").references(() => materials.id),
     childAssemblyId: text("child_assembly_id").references(() => assemblies.id),
     quantity: real("quantity").notNull(),
+    scrapRate: real("scrap_rate").notNull().default(0),
     references: text("references").notNull().default(""),
     notes: text("notes").notNull().default(""),
   },
@@ -123,4 +130,12 @@ export const auditLogs = sqliteTable("audit_logs", {
   action: text("action").notNull(),
   entity: text("entity").notNull(),
   createdAt: text("created_at").notNull(),
+});
+
+export const numberingRules = sqliteTable("numbering_rules", {
+  kind: text("kind").primaryKey(),
+  prefix: text("prefix").notNull(),
+  suffix: text("suffix").notNull().default(""),
+  digits: integer("digits").notNull(),
+  start: integer("start").notNull().default(1),
 });

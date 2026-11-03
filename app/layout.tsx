@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 export const metadata: Metadata = {
   title: "芯链 CoreLink · 企业电子物料管理",
